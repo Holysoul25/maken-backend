@@ -18,18 +18,8 @@ app.post('/contacto', async (req, res) => {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
 
-  // Validación captcha
-  if (!captcha) {
-    return res.status(400).json({ error: 'Captcha requerido' });
-  }
-
-  const verifyURL = `https://api.hcaptcha.com/siteverify`;
-  const params = new URLSearchParams({
-    secret: process.env.HCAPTCHA_SECRET,
-    response: captcha
-  });
-
-  const captchaRes = await fetch(`https://www.google.com/recaptcha/api/siteverify`, {
+  // Validación captcha reCAPTCHA v3
+  const captchaRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
     method: 'POST',
     body: new URLSearchParams({
       secret: process.env.RECAPTCHA_SECRET,
@@ -38,11 +28,9 @@ app.post('/contacto', async (req, res) => {
   });
   const captchaData = await captchaRes.json();
 
-  // Score de 0 a 1, donde 1 es humano seguro. 0.5 es un buen umbral
   if (!captchaData.success || captchaData.score < 0.5) {
     return res.status(400).json({ error: 'Verificación fallida' });
   }
-
 
   try {
     // ── EMAIL 1: Notificación al dueño ──
