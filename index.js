@@ -29,14 +29,18 @@ app.post('/contacto', async (req, res) => {
     response: captcha
   });
 
-  const captchaRes = await fetch(verifyURL, {
+  const captchaRes = await fetch(`https://www.google.com/recaptcha/api/siteverify`, {
     method: 'POST',
-    body: params
+    body: new URLSearchParams({
+      secret: process.env.RECAPTCHA_SECRET,
+      response: captcha
+    })
   });
   const captchaData = await captchaRes.json();
 
-  if (!captchaData.success) {
-    return res.status(400).json({ error: 'Captcha inválido' });
+  // Score de 0 a 1, donde 1 es humano seguro. 0.5 es un buen umbral
+  if (!captchaData.success || captchaData.score < 0.5) {
+    return res.status(400).json({ error: 'Verificación fallida' });
   }
 
 
@@ -228,5 +232,5 @@ app.post('/contacto', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => console.log(`Maken API corriendo en puerto ${PORT}`));
