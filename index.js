@@ -36,7 +36,7 @@ app.post('/contacto', async (req, res) => {
     // ── EMAIL 1: Notificación al dueño ──
     await resend.emails.send({
       from: 'Formulario Maken <noreply@maken.cl>',
-      to: 'kevinalballay7@gmail.com',
+      to: 'servicioweb07@gmail.com',
       replyTo: email,
       subject: `Nueva cotización: ${servicio} — ${nombre}`,
       html: `
