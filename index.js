@@ -1,16 +1,28 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const { Resend } = require('resend');
-const https = require('https');
 
 const app = express();
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+app.set('trust proxy', 1);
 app.use(cors({ origin: 'https://maken.cl' }));
 app.use(express.json());
 
-app.post('/contacto', async (req, res) => {
+// Antes no había ningún límite en /contacto — solo el captcha lo protegía.
+// 8 envíos cada 15 min por IP es holgado para un visitante real pero corta
+// un script que reintente.
+const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  message: { error: 'Demasiadas solicitudes desde esta conexión. Espera unos minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.post('/contacto', contactLimiter, async (req, res) => {
   const { nombre, email, telefono, servicio, mensaje, captcha } = req.body;
 
   // Validación campos
@@ -18,18 +30,32 @@ app.post('/contacto', async (req, res) => {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
 
-  // Validación captcha reCAPTCHA v3
-  const captchaRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
-    method: 'POST',
-    body: new URLSearchParams({
-      secret: process.env.RECAPTCHA_SECRET,
-      response: captcha
-    })
-  });
-  const captchaData = await captchaRes.json();
+  // ── Validación captcha — Cloudflare Turnstile ──
+  // Se cambió desde reCAPTCHA v3: Turnstile no muestra el badge fijo de
+  // "protegido por reCAPTCHA" en la esquina, corre 100% en segundo plano,
+  // y como el dominio ya vive en Cloudflare no se agrega otra dependencia
+  // externa (Google) al sitio.
+  if (!process.env.TURNSTILE_SECRET_KEY) {
+    console.warn('⚠️  TURNSTILE_SECRET_KEY no configurada — captcha deshabilitado.');
+  } else {
+    if (!captcha) {
+      return res.status(400).json({ error: 'Verificación anti-spam faltante. Recarga la página e intenta de nuevo.' });
+    }
 
-  if (!captchaData.success || captchaData.score < 0.5) {
-    return res.status(400).json({ error: 'Verificación fallida' });
+    const captchaRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        secret: process.env.TURNSTILE_SECRET_KEY,
+        response: captcha,
+        remoteip: req.ip,
+      }),
+    });
+    const captchaData = await captchaRes.json();
+
+    if (!captchaData.success) {
+      return res.status(400).json({ error: 'Verificación anti-spam falló. Intenta de nuevo.' });
+    }
   }
 
   try {
